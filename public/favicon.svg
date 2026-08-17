@@ -1,1 +1,15 @@
-
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="14" fill="#020617"/>
+  <circle cx="30" cy="32" r="23" fill="#0f172a" stroke="#10b981" stroke-width="2"/>
+  <!-- testa -->
+  <circle cx="28" cy="17" r="5.5" fill="#10b981"/>
+  <!-- busto -->
+  <rect x="22" y="24" width="12" height="16" rx="4" fill="#10b981"/>
+  <!-- gamba di appoggio -->
+  <rect x="22" y="38" width="5" height="14" rx="2.5" fill="#10b981"/>
+  <!-- gamba che calcia, inclinata verso il pallone -->
+  <rect x="30" y="36" width="15" height="6" rx="3" fill="#10b981" transform="rotate(18 30 39)"/>
+  <!-- pallone -->
+  <circle cx="49" cy="41" r="5" fill="#e2e8f0"/>
+  <path d="M49 37.5l2 1.4-.7 2.3h-2.6l-.7-2.3z" fill="#0f172a"/>
+</svg>
