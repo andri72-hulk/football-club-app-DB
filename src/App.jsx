@@ -374,6 +374,19 @@ function defaultConfig() {
     positions: [...POSITIONS],
     medicalStatuses: [...MEDICAL_STATUS],
     exerciseTypes: [...EXERCISE_TYPES],
+    categories: [...DEFAULT_CATEGORIES],
+  };
+}
+
+// Libreria globale condivisa da TUTTE le stagioni: esercizi, dossier, moduli
+// personalizzati e configurazioni. Non vive più dentro le singole stagioni,
+// così sopravvive alla creazione di nuove stagioni e all'azzeramento dati.
+function defaultLibrary() {
+  return {
+    exercises: [],
+    dossier: [],
+    customFormations: [],
+    config: defaultConfig(),
   };
 }
 
@@ -1031,6 +1044,79 @@ const FORMATIONS_BY_FORMAT = {
 // Elenco piatto di tutti i moduli, usato per ricerche per id indipendenti dal formato
 const FORMATIONS = [...FORMATIONS_5V5, ...FORMATIONS_7V7, ...FORMATIONS_9V9, ...FORMATIONS_11];
 
+// Numero di giocatori (incluso portiere) per ciascun formato di campo
+const FORMAT_PLAYER_COUNT = { "5v5": 5, "7v7": 7, "9v9": 9, "11": 11 };
+
+// Elenco predefinito delle posizioni in campo: usato sia per la legenda nel menu
+// Moduli, sia come lista di scelta quando si crea un nuovo modulo personalizzato.
+const FORMATION_POSITION_LIBRARY = [
+  { label: "POR", description: "Portiere", role: "Portiere" },
+  { label: "DC", description: "Difensore Centrale", role: "Difensore" },
+  { label: "LIB", description: "Libero", role: "Difensore" },
+  { label: "TZ", description: "Terzino", role: "Difensore" },
+  { label: "TRZ", description: "Terzino", role: "Difensore" },
+  { label: "QT", description: "Quinto (esterno a tutta fascia)", role: "Difensore" },
+  { label: "MED", description: "Mediano", role: "Centrocampista" },
+  { label: "REG", description: "Regista", role: "Centrocampista" },
+  { label: "MEZ", description: "Mezzala", role: "Centrocampista" },
+  { label: "CC", description: "Centrocampista Centrale", role: "Centrocampista" },
+  { label: "CM", description: "Centrocampista", role: "Centrocampista" },
+  { label: "CE", description: "Centrocampista Esterno", role: "Centrocampista" },
+  { label: "ED", description: "Esterno Destro", role: "Centrocampista" },
+  { label: "ES", description: "Esterno Sinistro", role: "Centrocampista" },
+  { label: "TRQ", description: "Trequartista", role: "Attaccante" },
+  { label: "ALA", description: "Ala", role: "Attaccante" },
+  { label: "AD", description: "Ala Destra", role: "Attaccante" },
+  { label: "AS", description: "Ala Sinistra", role: "Attaccante" },
+  { label: "CT", description: "Centravanti", role: "Attaccante" },
+  { label: "PC", description: "Punta Centrale", role: "Attaccante" },
+  { label: "SP", description: "Seconda Punta", role: "Attaccante" },
+  { label: "ATT", description: "Attaccante", role: "Attaccante" },
+];
+
+// Categorie età precaricate (modificabili/eliminabili dalle Configurazioni)
+const DEFAULT_CATEGORIES = [
+  "Piccoli Amici",
+  "Primi Calci",
+  "Pulcini",
+  "Esordienti",
+  "Under 14",
+  "Under 15 (Giovanissimi)",
+  "Under 16/17 (Allievi)",
+  "Under 18/19 (Juniores)",
+  "Prima Squadra",
+];
+
+// Mappa di migrazione: converte le vecchie categorie (con fascia d'età nel nome)
+// nelle nuove versioni brevi, sia nell'elenco configurato sia negli esercizi già taggati.
+const CATEGORY_LABEL_MIGRATION = {
+  "Piccoli Amici: 5–6 anni": "Piccoli Amici",
+  "Primi Calci: 7–8 anni": "Primi Calci",
+  "Pulcini: 9–10 anni": "Pulcini",
+  "Esordienti: 11–12 anni": "Esordienti",
+  "Under 14: Circa 13-14 anni": "Under 14",
+  "Under 15 (Giovanissimi): Circa 14-15 anni": "Under 15 (Giovanissimi)",
+  "Under 16 / Under 17 (Allievi): Circa 15-17 anni": "Under 16/17 (Allievi)",
+  "Under 18 / Under 19 (Juniores): Circa 17-19 anni": "Under 18/19 (Juniores)",
+};
+
+function migrateCategoryLabel(label) {
+  return CATEGORY_LABEL_MIGRATION[label] || label;
+}
+
+// Applica la migrazione delle etichette categoria sia all'elenco configurato
+// sia agli esercizi già taggati con la vecchia versione, così l'aggiornamento
+// non richiede di ritoccare a mano ogni voce.
+function migrateLibraryCategories(lib) {
+  if (!lib) return lib;
+  const config = lib.config || defaultConfig();
+  const categories = (config.categories || []).map(migrateCategoryLabel);
+  const exercises = (lib.exercises || []).map((ex) =>
+    ex.category ? { ...ex, category: migrateCategoryLabel(ex.category) } : ex
+  );
+  return { ...lib, config: { ...config, categories }, exercises };
+}
+
 function emptyLineup() {
   return { formationId: null, assignments: {}, bench: [] };
 }
@@ -1038,6 +1124,7 @@ function emptyLineup() {
 function uid(prefix = "id") {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
+
 
 function avatarUrl(seed) {
   return `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(seed || "player")}&backgroundType=solid&backgroundColor=1e293b`;
@@ -1167,11 +1254,8 @@ function newSeason(name) {
     trainings: [],
     matches: [],
     focusTecnici: [],
-    exercises: [],
     lineup: emptyLineup(),
     championship: { fase1: null, fase2: null, faseFinale: null },
-    config: defaultConfig(),
-    dossier: [],
   };
 }
 
@@ -1433,6 +1517,35 @@ function EmptyState({ icon: Icon, text }) {
   );
 }
 
+// Pulsante rosso di azzeramento mirato, con richiesta di conferma inline,
+// riutilizzato in Giocatori, Allenamenti, Partite e Campionato.
+function SectionResetButton({ label = "Azzera", confirmText = "Confermi l'azzeramento? L'operazione non è reversibile.", onConfirm }) {
+  const [confirm, setConfirm] = useState(false);
+  if (confirm) {
+    return (
+      <div className="flex items-center gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 flex-wrap">
+        <span className="text-xs text-rose-300">{confirmText}</span>
+        <Button variant="secondary" className="px-2 py-1 text-xs" onClick={() => setConfirm(false)}>Annulla</Button>
+        <Button
+          variant="danger"
+          className="px-2 py-1 text-xs"
+          onClick={() => {
+            onConfirm();
+            setConfirm(false);
+          }}
+        >
+          Conferma
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <Button variant="danger" onClick={() => setConfirm(true)}>
+      <Trash2 className="w-4 h-4" /> {label}
+    </Button>
+  );
+}
+
 /* ============================================================
    APP PRINCIPALE
    ============================================================ */
@@ -1444,6 +1557,7 @@ export default function FootballClubApp() {
   const [sharedMode, setSharedMode] = useState(false);
   const [seasons, setSeasons] = useState([]);
   const [activeSeasonId, setActiveSeasonId] = useState(null);
+  const [library, setLibrary] = useState(null);
   const [tab, setTab] = useState("dashboard");
   const [playersView, setPlayersView] = useState("grid"); // 'grid' | 'board'
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -1478,15 +1592,61 @@ export default function FootballClubApp() {
         if (data && data.seasons && data.seasons.length > 0) {
           setSeasons(data.seasons);
           setActiveSeasonId(data.activeSeasonId || data.seasons[0].id);
+
+          if (data.library) {
+            // Assicura che eventuali voci aggiunte in versioni successive (es. categorie)
+            // siano comunque presenti anche su librerie salvate da versioni precedenti.
+            setLibrary(
+              migrateLibraryCategories({
+                ...defaultLibrary(),
+                ...data.library,
+                config: { ...defaultConfig(), ...(data.library.config || {}) },
+              })
+            );
+          } else {
+            // MIGRAZIONE: prima apertura dopo l'introduzione della libreria globale.
+            // Unisce esercizi/dossier già presenti in ciascuna stagione (deduplicando
+            // per id) e recupera la configurazione dalla prima stagione disponibile,
+            // così nessun dato già inserito viene perso.
+            const mergedExercises = [];
+            const mergedDossier = [];
+            const seenExerciseIds = new Set();
+            const seenDossierIds = new Set();
+            data.seasons.forEach((s) => {
+              (s.exercises || []).forEach((ex) => {
+                if (!seenExerciseIds.has(ex.id)) {
+                  seenExerciseIds.add(ex.id);
+                  mergedExercises.push(ex);
+                }
+              });
+              (s.dossier || []).forEach((d) => {
+                if (!seenDossierIds.has(d.id)) {
+                  seenDossierIds.add(d.id);
+                  mergedDossier.push(d);
+                }
+              });
+            });
+            const configSource = data.seasons.find((s) => s.config)?.config;
+            setLibrary(
+              migrateLibraryCategories({
+                exercises: mergedExercises,
+                dossier: mergedDossier,
+                customFormations: [],
+                config: { ...defaultConfig(), ...(configSource || {}) },
+              })
+            );
+          }
         } else {
           const s = newSeason("Stagione 2026-27");
           setSeasons([s]);
           setActiveSeasonId(s.id);
+          setLibrary(defaultLibrary());
         }
       } catch (e) {
         const s = newSeason("Stagione 2026-27");
         setSeasons([s]);
         setActiveSeasonId(s.id);
+        setLibrary(defaultLibrary());
       } finally {
         setLoading(false);
       }
@@ -1497,7 +1657,7 @@ export default function FootballClubApp() {
   const saveTimeoutRef = React.useRef(null);
 
   const persist = useCallback(
-    async (nextSeasons, nextActiveId, shared) => {
+    async (nextSeasons, nextActiveId, shared, nextLibrary) => {
       if (typeof window === "undefined" || !window.storage) {
         showToast("Storage non disponibile in questo ambiente", "error");
         return;
@@ -1506,6 +1666,7 @@ export default function FootballClubApp() {
       const payload = JSON.stringify({
         seasons: nextSeasons,
         activeSeasonId: nextActiveId,
+        library: nextLibrary,
         savedAt: new Date().toISOString(),
       });
       const targetShared = shared ?? sharedMode;
@@ -1547,13 +1708,13 @@ export default function FootballClubApp() {
     if (loading) return;
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(() => {
-      persist(seasons, activeSeasonId);
+      persist(seasons, activeSeasonId, undefined, library);
     }, 500);
     return () => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seasons, activeSeasonId, loading]);
+  }, [seasons, activeSeasonId, library, loading]);
 
   const activeSeason = useMemo(
     () => seasons.find((s) => s.id === activeSeasonId) || seasons[0],
@@ -1564,6 +1725,10 @@ export default function FootballClubApp() {
     setSeasons((prev) =>
       prev.map((s) => (s.id === activeSeasonId ? { ...s, ...updater(s) } : s))
     );
+  }
+
+  function updateLibrary(updater) {
+    setLibrary((prev) => ({ ...(prev || defaultLibrary()), ...updater(prev || defaultLibrary()) }));
   }
 
   async function toggleSharedMode() {
@@ -1577,10 +1742,11 @@ export default function FootballClubApp() {
       if (data && data.seasons && data.seasons.length > 0) {
         setSeasons(data.seasons);
         setActiveSeasonId(data.activeSeasonId || data.seasons[0].id);
+        setLibrary(migrateLibraryCategories(data.library ? { ...defaultLibrary(), ...data.library } : defaultLibrary()));
         showToast(next ? "Modalità condivisa attivata: dati dello staff caricati" : "Modalità personale attivata");
       } else {
         // Nessun dato condiviso esistente: proponi di copiare i dati attuali
-        await persist(seasons, activeSeasonId, next);
+        await persist(seasons, activeSeasonId, next, library);
         showToast(next ? "Modalità condivisa attivata: dati attuali copiati" : "Modalità personale attivata");
       }
     } catch (e) {
@@ -1589,7 +1755,7 @@ export default function FootballClubApp() {
     }
   }
 
-  if (loading) {
+  if (loading || !library) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
@@ -1614,7 +1780,7 @@ export default function FootballClubApp() {
   ];
 
   return (
-    <ConfigContext.Provider value={activeSeason?.config || defaultConfig()}>
+    <ConfigContext.Provider value={library?.config || defaultConfig()}>
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans">
       {/* HEADER */}
       <header className="sticky top-0 z-40 border-b border-white/10 bg-slate-950/90 backdrop-blur">
@@ -1783,25 +1949,27 @@ export default function FootballClubApp() {
         ) : tab === "players" ? (
           <PlayersSection season={activeSeason} updateSeason={updateActiveSeason} showToast={showToast} view={playersView} setView={setPlayersView} />
         ) : tab === "trainings" ? (
-          <TrainingsSection season={activeSeason} updateSeason={updateActiveSeason} showToast={showToast} />
+          <TrainingsSection season={activeSeason} updateSeason={updateActiveSeason} library={library} updateLibrary={updateLibrary} showToast={showToast} />
         ) : tab === "matches" ? (
           <MatchesSection season={activeSeason} updateSeason={updateActiveSeason} showToast={showToast} />
         ) : tab === "formations" ? (
-          <FormationsSection season={activeSeason} updateSeason={updateActiveSeason} showToast={showToast} />
+          <FormationsSection season={activeSeason} updateSeason={updateActiveSeason} library={library} updateLibrary={updateLibrary} showToast={showToast} />
         ) : tab === "championship" ? (
           <ChampionshipSection season={activeSeason} updateSeason={updateActiveSeason} showToast={showToast} />
         ) : tab === "dossier" ? (
-          <DossierSection season={activeSeason} updateSeason={updateActiveSeason} showToast={showToast} />
+          <DossierSection library={library} updateLibrary={updateLibrary} showToast={showToast} />
         ) : tab === "export" ? (
           <ExportSection
             seasons={seasons}
             activeSeason={activeSeason}
             setSeasons={setSeasons}
             setActiveSeasonId={setActiveSeasonId}
+            library={library}
+            setLibrary={setLibrary}
             showToast={showToast}
           />
         ) : tab === "configurations" ? (
-          <ConfigurationsSection season={activeSeason} updateSeason={updateActiveSeason} showToast={showToast} />
+          <ConfigurationsSection library={library} updateLibrary={updateLibrary} showToast={showToast} />
         ) : tab === "settings" ? (
           <SettingsSection
             season={activeSeason}
@@ -2306,6 +2474,14 @@ function PlayersSection({ season, updateSeason, showToast, view, setView }) {
             <Button onClick={() => setShowAdd(true)}>
               <Plus className="w-4 h-4" /> Aggiungi Giocatore
             </Button>
+            <SectionResetButton
+              label="Azzera Giocatori"
+              confirmText="Eliminare tutti i giocatori della rosa?"
+              onConfirm={() => {
+                updateSeason(() => ({ players: [] }));
+                showToast("Rosa giocatori azzerata");
+              }}
+            />
           </div>
         }
       />
@@ -2927,7 +3103,7 @@ function StatBar({ label, value, editable, onChange }) {
    SEZIONE ALLENAMENTI
    ============================================================ */
 
-function TrainingsSection({ season, updateSeason, showToast }) {
+function TrainingsSection({ season, updateSeason, library, updateLibrary, showToast }) {
   const trainings = [...(season.trainings || [])].sort((a, b) => new Date(b.date) - new Date(a.date));
   const players = season.players || [];
   const focusTecnici = season.focusTecnici || [];
@@ -2960,10 +3136,14 @@ function TrainingsSection({ season, updateSeason, showToast }) {
       const list = s.focusTecnici || [];
       const exists = list.some((f) => f.id === ft.id);
       const focusTecnici = exists ? list.map((f) => (f.id === ft.id ? ft : f)) : [...list, ft];
+      return { focusTecnici };
+    });
 
-      // Gli esercizi inseriti direttamente nel Focus (con titolo) vengono aggiunti
-      // anche all'elenco esercizi singoli, se non esiste già un esercizio identico
-      const currentExercises = s.exercises || [];
+    // Gli esercizi inseriti direttamente nel Focus (con titolo) vengono aggiunti
+    // anche all'elenco esercizi singoli della libreria globale, se non esiste già
+    // un esercizio identico
+    updateLibrary((lib) => {
+      const currentExercises = lib.exercises || [];
       const newStandalone = [];
       (ft.exercises || []).forEach((ex) => {
         if (!ex.title || !ex.title.trim()) return;
@@ -2978,11 +3158,7 @@ function TrainingsSection({ season, updateSeason, showToast }) {
           newStandalone.push({ ...ex, id: uid("ex") });
         }
       });
-
-      return {
-        focusTecnici,
-        exercises: [...currentExercises, ...newStandalone],
-      };
+      return { exercises: [...currentExercises, ...newStandalone] };
     });
     showToast("Focus Tecnico salvato");
   }
@@ -2993,8 +3169,8 @@ function TrainingsSection({ season, updateSeason, showToast }) {
   }
 
   function saveExercise(ex) {
-    updateSeason((s) => {
-      const list = s.exercises || [];
+    updateLibrary((lib) => {
+      const list = lib.exercises || [];
       const exists = list.some((e) => e.id === ex.id);
       return {
         exercises: exists ? list.map((e) => (e.id === ex.id ? ex : e)) : [...list, ex],
@@ -3004,7 +3180,7 @@ function TrainingsSection({ season, updateSeason, showToast }) {
   }
 
   function deleteExercise(id) {
-    updateSeason((s) => ({ exercises: (s.exercises || []).filter((e) => e.id !== id) }));
+    updateLibrary((lib) => ({ exercises: (lib.exercises || []).filter((e) => e.id !== id) }));
     showToast("Esercizio eliminato");
   }
 
@@ -3036,9 +3212,19 @@ function TrainingsSection({ season, updateSeason, showToast }) {
         icon={Activity}
         action={
           subTab === "sessioni" && (
-            <Button onClick={() => setShowAdd(true)}>
-              <Plus className="w-4 h-4" /> Crea Nuovo Allenamento
-            </Button>
+            <div className="flex gap-2 flex-wrap">
+              <Button onClick={() => setShowAdd(true)}>
+                <Plus className="w-4 h-4" /> Crea Nuovo Allenamento
+              </Button>
+              <SectionResetButton
+                label="Azzera Allenamenti"
+                confirmText="Eliminare tutte le sessioni di allenamento registrate?"
+                onConfirm={() => {
+                  updateSeason(() => ({ trainings: [] }));
+                  showToast("Allenamenti azzerati");
+                }}
+              />
+            </div>
           )
         }
       />
@@ -3066,13 +3252,13 @@ function TrainingsSection({ season, updateSeason, showToast }) {
           focusTecnici={focusTecnici}
           onSave={saveFocusTecnico}
           onDelete={deleteFocusTecnico}
-          exercises={season.exercises || []}
+          exercises={library.exercises || []}
           onSaveExercise={saveExercise}
           onDeleteExercise={deleteExercise}
         />
       ) : subTab === "esercizi" ? (
         <ExercisesLibrarySection
-          exercises={season.exercises || []}
+          exercises={library.exercises || []}
           onSaveExercise={saveExercise}
           onDeleteExercise={deleteExercise}
           focusTecnici={focusTecnici}
@@ -3158,7 +3344,7 @@ function totalFocusMinutes(ft) {
 }
 
 function emptyExercise() {
-  return { id: uid("ex"), title: "", type: "Tecnica", time: "", goal: "", description: "", image: null };
+  return { id: uid("ex"), title: "", type: "Tecnica", category: "", time: "", goal: "", description: "", image: null };
 }
 
 function FocusTecniciSection({ focusTecnici, onSave, onDelete, exercises, onSaveExercise, onDeleteExercise }) {
@@ -3326,6 +3512,14 @@ function ExerciseForm({ initial, onSubmit, onCancel }) {
           ))}
         </select>
       </Field>
+      <Field label="Categoria">
+        <select className={inputClass} value={form.category || ""} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+          <option value="">Nessuna categoria</option>
+          {(config.categories || []).map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+      </Field>
       <Field label="Tempo di esecuzione">
         <input className={inputClass} value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} placeholder="Es. 10 minuti" />
       </Field>
@@ -3375,6 +3569,7 @@ function ExercisesLibrarySection({ exercises, onSaveExercise, onDeleteExercise, 
   const config = useConfig();
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("Tutti");
+  const [categoryFilter, setCategoryFilter] = useState("Tutte");
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [editingSource, setEditingSource] = useState(null); // null = singolo, {focusId} = da Focus Tecnico
@@ -3398,17 +3593,26 @@ function ExercisesLibrarySection({ exercises, onSaveExercise, onDeleteExercise, 
       (ex.title || "").toLowerCase().includes(q) ||
       (ex.goal || "").toLowerCase().includes(q) ||
       (ex.description || "").toLowerCase().includes(q);
-    const matchesType = typeFilter === "Tutti" || (ex.type || "Tecnica") === typeFilter;
-    return matchesSearch && matchesType;
+    const effectiveType = ex.type || "ND";
+    const matchesType = typeFilter === "Tutti" || effectiveType === typeFilter;
+    const matchesCategory = categoryFilter === "Tutte" || (categoryFilter === "ND" ? !ex.category : ex.category === categoryFilter);
+    return matchesSearch && matchesType && matchesCategory;
   });
 
   // Unione tra le tipologie configurate e quelle eventualmente già usate nei dati
-  // (per non nascondere esercizi con un tipo non più/non ancora presente in Configurazioni)
-  const allTypesPresent = Array.from(new Set([...config.exerciseTypes, ...combined.map((ex) => ex.type || "Tecnica")]));
+  // (per non nascondere esercizi con un tipo non più/non ancora presente in Configurazioni).
+  // "ND" raggruppa gli esercizi senza tipologia assegnata.
+  const allTypesPresent = [
+    "ND",
+    ...Array.from(new Set([...config.exerciseTypes, ...combined.map((ex) => ex.type).filter(Boolean)])),
+  ];
+  const allCategoriesPresent = Array.from(
+    new Set([...(config.categories || []), ...combined.map((ex) => ex.category).filter(Boolean)])
+  );
   const grouped = allTypesPresent
     .map((type) => ({
       type,
-      items: filtered.filter((ex) => (ex.type || "Tecnica") === type),
+      items: filtered.filter((ex) => (ex.type || "ND") === type),
     }))
     .filter((g) => g.items.length > 0);
 
@@ -3465,7 +3669,7 @@ function ExercisesLibrarySection({ exercises, onSaveExercise, onDeleteExercise, 
         </Button>
       </div>
 
-      <div className="flex items-center gap-2 mb-5 overflow-x-auto pb-1">
+      <div className="flex items-center gap-2 mb-2 overflow-x-auto pb-1">
         {["Tutti", ...allTypesPresent].map((t) => (
           <button
             key={t}
@@ -3481,6 +3685,22 @@ function ExercisesLibrarySection({ exercises, onSaveExercise, onDeleteExercise, 
         ))}
       </div>
 
+      <div className="flex items-center gap-2 mb-5 overflow-x-auto pb-1">
+        {["Tutte", "ND", ...allCategoriesPresent].map((c) => (
+          <button
+            key={c}
+            onClick={() => setCategoryFilter(c)}
+            className={`shrink-0 rounded-full px-3.5 py-1.5 text-[11px] font-medium border transition-colors ${
+              categoryFilter === c
+                ? "bg-sky-500 text-slate-950 border-sky-500"
+                : "border-white/10 text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            {c}
+          </button>
+        ))}
+      </div>
+
       {grouped.length === 0 ? (
         <EmptyState icon={Target} text={search ? "Nessun esercizio trovato per questa ricerca." : "Nessun esercizio creato ancora."} />
       ) : (
@@ -3488,7 +3708,7 @@ function ExercisesLibrarySection({ exercises, onSaveExercise, onDeleteExercise, 
           {grouped.map((g) => (
             <div key={g.type}>
               <div className="flex items-center gap-2 mb-2.5">
-                <Badge className={EXERCISE_TYPE_STYLES[g.type] || EXERCISE_TYPE_STYLES.Tecnica}>{g.type}</Badge>
+                <Badge className={EXERCISE_TYPE_STYLES[g.type] || NEUTRAL_BADGE}>{g.type}</Badge>
                 <span className="text-xs text-slate-500">({g.items.length})</span>
               </div>
               <div className="space-y-2">
@@ -3505,6 +3725,9 @@ function ExercisesLibrarySection({ exercises, onSaveExercise, onDeleteExercise, 
                           <span className="text-sm font-semibold text-slate-100 whitespace-nowrap">{ex.title || "Senza titolo"}</span>
                           <span className="text-[11px] text-slate-500 whitespace-nowrap">{ex.time || "--"}</span>
                           {ex.goal && <span className="text-[11px] text-slate-500 italic">Obiettivo: {ex.goal}</span>}
+                          {ex.category && (
+                            <Badge className="bg-sky-500/15 text-sky-400 border-sky-500/30">{ex.category}</Badge>
+                          )}
                           <Badge className={ex._source ? "bg-sky-500/15 text-sky-400 border-sky-500/30" : "bg-white/5 text-slate-400 border-white/10"}>
                             {ex._source ? `Da: ${ex._source.focusTitle}` : "Esercizio singolo"}
                           </Badge>
@@ -3999,9 +4222,19 @@ function MatchesSection({ season, updateSeason, showToast }) {
         title="Partite"
         icon={Trophy}
         action={
-          <Button onClick={() => setShowAdd(true)}>
-            <Plus className="w-4 h-4" /> Programma Partita
-          </Button>
+          <div className="flex gap-2 flex-wrap">
+            <Button onClick={() => setShowAdd(true)}>
+              <Plus className="w-4 h-4" /> Programma Partita
+            </Button>
+            <SectionResetButton
+              label="Azzera Partite"
+              confirmText="Eliminare tutte le partite, programmate e disputate?"
+              onConfirm={() => {
+                updateSeason(() => ({ matches: [] }));
+                showToast("Partite azzerate");
+              }}
+            />
+          </div>
         }
       />
 
@@ -4688,6 +4921,28 @@ function StrengthsWeaknesses({ formation, compact }) {
   );
 }
 
+// Legenda delle sigle di posizione usate nei moduli (es. DC = Difensore Centrale).
+// Mostra solo le sigle effettivamente presenti nel modulo corrente, se fornito;
+// altrimenti l'elenco completo.
+function PositionLegend({ formation }) {
+  const labelsInUse = formation ? new Set((formation.positions || []).map((p) => p.label)) : null;
+  const entries = labelsInUse
+    ? FORMATION_POSITION_LIBRARY.filter((p) => labelsInUse.has(p.label))
+    : FORMATION_POSITION_LIBRARY;
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/5 p-3.5 mt-4">
+      <p className="text-xs font-bold text-slate-300 uppercase tracking-wide mb-2.5">Legenda posizioni</p>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-1.5">
+        {entries.map((p) => (
+          <p key={p.label} className="text-[11px] text-slate-400">
+            <span className="font-mono font-bold text-slate-200">{p.label}</span> = {p.description}
+          </p>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function FormationPickerCard({ formation, onChoose }) {
   return (
     <Card className="p-4 flex flex-col">
@@ -4906,18 +5161,303 @@ function PlayerPickerModal({ open, onClose, title, players, excludedIds, current
   );
 }
 
-function FormationsSection({ season, updateSeason, showToast }) {
+function emptyNewFormation() {
+  return {
+    format: "9v9",
+    name: "",
+    subtitle: "",
+    positionLabels: [],
+    strengths: [""],
+    weaknesses: [""],
+    note: "",
+  };
+}
+
+function roleForPositionLabel(label) {
+  return FORMATION_POSITION_LIBRARY.find((p) => p.label === label)?.role || "Centrocampista";
+}
+
+// Campo cliccabile per posizionare in sequenza le posizioni del nuovo modulo.
+const PLACEMENT_GRID_COLS = 5; // colonne per il posizionamento, dalla linea laterale sinistra a quella destra
+const PLACEMENT_GRID_ROWS = 8; // 4 righe per ciascuna metà campo
+// Il rettangolo di gioco in PitchBackground occupa x: 2–66 (su viewBox largo 68) e y: 2–98 (su viewBox alto 100):
+// la griglia deve agganciarsi esattamente a queste linee laterali, non ai bordi esterni dell'SVG.
+const PITCH_X_MIN = (2 / 68) * 100;
+const PITCH_X_MAX = (66 / 68) * 100;
+const PITCH_Y_MIN = 2;
+const PITCH_Y_MAX = 98;
+
+function ClickToPlacePitch({ placed, onPlace, disabled }) {
+  const containerRef = React.useRef(null);
+
+  function handleClick(e) {
+    if (disabled || !containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const relX = ((e.clientX - rect.left) / rect.width) * 100;
+    const relY = ((e.clientY - rect.top) / rect.height) * 100;
+    // Aggancia il click al centro del quadrante della griglia più vicino,
+    // calcolato dentro i confini reali del rettangolo di gioco.
+    const pitchWidth = PITCH_X_MAX - PITCH_X_MIN;
+    const pitchHeight = PITCH_Y_MAX - PITCH_Y_MIN;
+    const col = Math.min(PLACEMENT_GRID_COLS - 1, Math.max(0, Math.floor(((relX - PITCH_X_MIN) / pitchWidth) * PLACEMENT_GRID_COLS)));
+    const row = Math.min(PLACEMENT_GRID_ROWS - 1, Math.max(0, Math.floor(((relY - PITCH_Y_MIN) / pitchHeight) * PLACEMENT_GRID_ROWS)));
+    const x = PITCH_X_MIN + ((col + 0.5) / PLACEMENT_GRID_COLS) * pitchWidth;
+    const y = PITCH_Y_MIN + ((row + 0.5) / PLACEMENT_GRID_ROWS) * pitchHeight;
+    onPlace(x, y);
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      onClick={handleClick}
+      className={`relative w-full rounded-2xl overflow-hidden border border-white/10 shadow-xl ${disabled ? "" : "cursor-crosshair"}`}
+      style={{ aspectRatio: "68 / 100" }}
+    >
+      <PitchBackground />
+      {/* Griglia guida: 8 righe x 5 colonne, agganciata alle linee laterali del campo */}
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none">
+        <g stroke="#ffffff30" strokeWidth="0.3">
+          {Array.from({ length: PLACEMENT_GRID_COLS - 1 }).map((_, i) => {
+            const gx = PITCH_X_MIN + ((i + 1) / PLACEMENT_GRID_COLS) * (PITCH_X_MAX - PITCH_X_MIN);
+            return <line key={`c${i}`} x1={gx} y1={PITCH_Y_MIN} x2={gx} y2={PITCH_Y_MAX} />;
+          })}
+          {Array.from({ length: PLACEMENT_GRID_ROWS - 1 }).map((_, i) => {
+            const gy = PITCH_Y_MIN + ((i + 1) / PLACEMENT_GRID_ROWS) * (PITCH_Y_MAX - PITCH_Y_MIN);
+            return <line key={`r${i}`} x1={PITCH_X_MIN} y1={gy} x2={PITCH_X_MAX} y2={gy} />;
+          })}
+        </g>
+      </svg>
+      {placed.map((p, i) => (
+        <div
+          key={p.id}
+          style={{ left: `${p.x}%`, top: `${p.y}%` }}
+          className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center pointer-events-none"
+        >
+          <div className="w-9 h-9 rounded-full border-2 border-emerald-400 bg-slate-950/85 flex items-center justify-center text-[10px] font-bold text-white">
+            {p.label}
+          </div>
+          <span className="mt-0.5 text-[9px] text-white/70">{i + 1}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function NewFormationWizard({ onCancel, onSave }) {
+  const [step, setStep] = useState(1);
+  const [form, setForm] = useState(emptyNewFormation());
+  const [placed, setPlaced] = useState([]);
+
+  const requiredCount = FORMAT_PLAYER_COUNT[form.format];
+
+  useEffect(() => {
+    setForm((f) => {
+      const count = FORMAT_PLAYER_COUNT[f.format];
+      const labels = [...f.positionLabels];
+      while (labels.length < count) labels.push("");
+      labels.length = count;
+      return { ...f, positionLabels: labels };
+    });
+  }, [form.format]);
+
+  function updatePositionLabel(idx, label) {
+    const next = [...form.positionLabels];
+    next[idx] = label;
+    setForm({ ...form, positionLabels: next });
+  }
+
+  function updateListItem(key, idx, value) {
+    const next = [...form[key]];
+    next[idx] = value;
+    setForm({ ...form, [key]: next });
+  }
+
+  function addListItem(key) {
+    if (form[key].length >= 6) return;
+    setForm({ ...form, [key]: [...form[key], ""] });
+  }
+
+  function removeListItem(key, idx) {
+    setForm({ ...form, [key]: form[key].filter((_, i) => i !== idx) });
+  }
+
+  const step1Valid = form.name.trim() && form.positionLabels.length === requiredCount && form.positionLabels.every((l) => l);
+
+  function goToPlacement() {
+    setPlaced([]);
+    setStep(2);
+  }
+
+  function placeNext(x, y) {
+    if (placed.length >= requiredCount) return;
+    const label = form.positionLabels[placed.length];
+    setPlaced([...placed, { id: uid("pos"), label, role: roleForPositionLabel(label), x, y }]);
+  }
+
+  function undoLastPlacement() {
+    setPlaced(placed.slice(0, -1));
+  }
+
+  function handleSave() {
+    const structureLabel = form.positionLabels.join(" — ");
+    onSave({
+      id: uid("customf"),
+      format: form.format,
+      name: form.name.trim(),
+      subtitle: form.subtitle.trim(),
+      description: form.subtitle.trim(),
+      structureLabel,
+      strengths: form.strengths.map((s) => s.trim()).filter(Boolean),
+      weaknesses: form.weaknesses.map((s) => s.trim()).filter(Boolean),
+      note: form.note.trim() || undefined,
+      positions: placed,
+      custom: true,
+    });
+  }
+
+  if (step === 2) {
+    const done = placed.length >= requiredCount;
+    return (
+      <div>
+        <p className="text-sm text-slate-400 mb-4">
+          {done
+            ? "Tutte le posizioni sono state piazzate. Controlla e salva il modulo."
+            : `Clicca sul campo per posizionare: ${form.positionLabels[placed.length]} (${placed.length + 1} di ${requiredCount})`}
+        </p>
+        <div style={{ maxWidth: 320 }} className="mx-auto">
+          <ClickToPlacePitch placed={placed} onPlace={placeNext} disabled={done} />
+        </div>
+        <div className="flex justify-between gap-2 mt-5">
+          <Button variant="secondary" onClick={() => setStep(1)}>
+            <ChevronLeft className="w-4 h-4" /> Torna al modulo
+          </Button>
+          <div className="flex gap-2">
+            {placed.length > 0 && (
+              <Button variant="secondary" onClick={undoLastPlacement}>Annulla ultimo</Button>
+            )}
+            <Button disabled={!done} onClick={handleSave}>
+              <Save className="w-4 h-4" /> Salva modulo
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <Field label="Numero giocatori in campo">
+        <select className={inputClass} value={form.format} onChange={(e) => setForm({ ...form, format: e.target.value })}>
+          {TEAM_FORMAT_OPTIONS.map((fmt) => (
+            <option key={fmt} value={fmt}>Calcio a {fmt}</option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Schema del modulo">
+        <input className={inputClass} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Es. 4-3-3" />
+      </Field>
+      <Field label="Descrizione modulo">
+        <input className={inputClass} value={form.subtitle} onChange={(e) => setForm({ ...form, subtitle: e.target.value })} placeholder="Es. Il modulo del coraggio" />
+      </Field>
+
+      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2 mt-4">
+        Posizioni ({requiredCount} giocatori, portiere incluso)
+      </p>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-4">
+        {form.positionLabels.map((label, idx) => (
+          <select
+            key={idx}
+            className={inputClass}
+            value={label}
+            onChange={(e) => updatePositionLabel(idx, e.target.value)}
+          >
+            <option value="">Posizione {idx + 1}...</option>
+            {FORMATION_POSITION_LIBRARY.map((p) => (
+              <option key={p.label} value={p.label}>{p.label} · {p.description}</option>
+            ))}
+          </select>
+        ))}
+      </div>
+
+      <div className="grid sm:grid-cols-2 gap-4 mb-4">
+        <div>
+          <p className="text-xs font-bold text-emerald-400 uppercase tracking-wide mb-2">Punti di forza (max 6)</p>
+          {form.strengths.map((s, i) => (
+            <div key={i} className="flex gap-1.5 mb-1.5">
+              <input className={inputClass} value={s} onChange={(e) => updateListItem("strengths", i, e.target.value)} placeholder="Punto di forza" />
+              <button onClick={() => removeListItem("strengths", i)} className="text-rose-400 px-1"><X className="w-4 h-4" /></button>
+            </div>
+          ))}
+          {form.strengths.length < 6 && (
+            <button onClick={() => addListItem("strengths")} className="text-xs text-emerald-400 flex items-center gap-1 mt-1">
+              <Plus className="w-3.5 h-3.5" /> Aggiungi
+            </button>
+          )}
+        </div>
+        <div>
+          <p className="text-xs font-bold text-rose-400 uppercase tracking-wide mb-2">Punti di debolezza (max 6)</p>
+          {form.weaknesses.map((s, i) => (
+            <div key={i} className="flex gap-1.5 mb-1.5">
+              <input className={inputClass} value={s} onChange={(e) => updateListItem("weaknesses", i, e.target.value)} placeholder="Punto di debolezza" />
+              <button onClick={() => removeListItem("weaknesses", i)} className="text-rose-400 px-1"><X className="w-4 h-4" /></button>
+            </div>
+          ))}
+          {form.weaknesses.length < 6 && (
+            <button onClick={() => addListItem("weaknesses")} className="text-xs text-rose-400 flex items-center gap-1 mt-1">
+              <Plus className="w-3.5 h-3.5" /> Aggiungi
+            </button>
+          )}
+        </div>
+      </div>
+
+      <Field label="Nota aggiuntiva (facoltativa)">
+        <textarea
+          rows={2}
+          className={inputClass}
+          value={form.note}
+          onChange={(e) => setForm({ ...form, note: e.target.value })}
+          placeholder="Es. Consigliato come punto di partenza per la categoria Esordienti..."
+        />
+      </Field>
+
+      <div className="flex justify-end gap-2 mt-4">
+        <Button variant="secondary" onClick={onCancel}>Annulla</Button>
+        <Button disabled={!step1Valid} onClick={goToPlacement}>
+          Continua: posiziona sul campo <ChevronRight className="w-4 h-4" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function FormationsSection({ season, updateSeason, library, updateLibrary, showToast }) {
   const lineup = season.lineup || emptyLineup();
   const players = season.players || [];
-  const formation = FORMATIONS.find((f) => f.id === lineup.formationId);
+  const allFormations = useMemo(() => [...FORMATIONS, ...(library.customFormations || [])], [library.customFormations]);
+  const allFormationsByFormat = useMemo(() => {
+    const custom = library.customFormations || [];
+    const result = {};
+    Object.keys(FORMATIONS_BY_FORMAT).forEach((fmt) => {
+      result[fmt] = [...FORMATIONS_BY_FORMAT[fmt], ...custom.filter((f) => f.format === fmt)];
+    });
+    return result;
+  }, [library.customFormations]);
+  const formation = allFormations.find((f) => f.id === lineup.formationId);
   const [picker, setPicker] = useState(null); // { kind: 'position'|'bench', positionId?, benchIndex?, suggestedRole? }
+  const [showNewFormation, setShowNewFormation] = useState(false);
   const [selectedFormat, setSelectedFormat] = useState(() => {
     if (lineup.formationId) {
-      const found = Object.entries(FORMATIONS_BY_FORMAT).find(([, arr]) => arr.some((f) => f.id === lineup.formationId));
+      const found = Object.entries(allFormationsByFormat).find(([, arr]) => arr.some((f) => f.id === lineup.formationId));
       if (found) return found[0];
     }
     return TEAM_FORMAT_OPTIONS.includes(season.teamFormat) ? season.teamFormat : "9v9";
   });
+
+  function saveCustomFormation(newFormation) {
+    updateLibrary((lib) => ({ customFormations: [...(lib.customFormations || []), newFormation] }));
+    setShowNewFormation(false);
+    showToast("Modulo personalizzato creato");
+  }
 
   function chooseFormation(id) {
     updateSeason(() => ({ lineup: { formationId: id, assignments: {}, bench: [] } }));
@@ -5013,18 +5553,23 @@ function FormationsSection({ season, updateSeason, showToast }) {
       />
 
       {!formation && (
-        <div className="flex gap-2 mb-5 flex-wrap">
-          {TEAM_FORMAT_OPTIONS.map((fmt) => (
-            <button
-              key={fmt}
-              onClick={() => setSelectedFormat(fmt)}
-              className={`rounded-full px-4 py-2 text-xs font-semibold border transition-colors ${
-                selectedFormat === fmt ? "bg-emerald-500 text-slate-950 border-emerald-500" : "border-white/10 text-slate-400"
-              }`}
-            >
-              Calcio a {fmt}
-            </button>
-          ))}
+        <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
+          <div className="flex gap-2 flex-wrap">
+            {TEAM_FORMAT_OPTIONS.map((fmt) => (
+              <button
+                key={fmt}
+                onClick={() => setSelectedFormat(fmt)}
+                className={`rounded-full px-4 py-2 text-xs font-semibold border transition-colors ${
+                  selectedFormat === fmt ? "bg-emerald-500 text-slate-950 border-emerald-500" : "border-white/10 text-slate-400"
+                }`}
+              >
+                Calcio a {fmt}
+              </button>
+            ))}
+          </div>
+          <Button variant="secondary" onClick={() => setShowNewFormation(true)}>
+            <Plus className="w-4 h-4" /> Crea nuovo modulo
+          </Button>
         </div>
       )}
 
@@ -5034,7 +5579,7 @@ function FormationsSection({ season, updateSeason, showToast }) {
             Scegli il modulo tattico per il campo a {selectedFormat} (portiere + giocatori di movimento). Ogni modulo mostra punti di forza e di debolezza per aiutarti nella scelta.
           </p>
           <div className="grid lg:grid-cols-2 gap-4">
-            {FORMATIONS_BY_FORMAT[selectedFormat].map((f) => (
+            {allFormationsByFormat[selectedFormat].map((f) => (
               <FormationPickerCard key={f.id} formation={f} onChoose={chooseFormation} />
             ))}
           </div>
@@ -5099,6 +5644,7 @@ function FormationsSection({ season, updateSeason, showToast }) {
                   {formation.note}
                 </p>
               )}
+              <PositionLegend formation={formation} />
             </div>
           </div>
         </div>
@@ -5126,6 +5672,12 @@ function FormationsSection({ season, updateSeason, showToast }) {
         }
         onUpdateStatus={updatePlayerStatus}
       />
+
+      <Modal open={showNewFormation} onClose={() => setShowNewFormation(false)} title="Crea nuovo modulo" wide>
+        {showNewFormation && (
+          <NewFormationWizard onCancel={() => setShowNewFormation(false)} onSave={saveCustomFormation} />
+        )}
+      </Modal>
     </div>
   );
 }
@@ -5314,25 +5866,35 @@ function ChampionshipSection({ season, updateSeason, showToast }) {
         }
       />
 
-      <div className="flex gap-2 mb-5 flex-wrap">
-        {Object.keys(CHAMPIONSHIP_PHASE_META).map((key) => {
-          const exists = !!championship[key];
-          const canCreate = priorPhaseClosed(key);
-          return (
-            <button
-              key={key}
-              disabled={!exists && !canCreate}
-              onClick={() => setActiveTab(key)}
-              className={`rounded-full px-4 py-2 text-xs font-semibold border transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
-                activeTab === key ? "bg-emerald-500 text-slate-950 border-emerald-500" : "border-white/10 text-slate-400"
-              }`}
-            >
-              {CHAMPIONSHIP_PHASE_META[key].label}
-              {!exists && canCreate && " (da creare)"}
-              {championship[key]?.closed && " ✓"}
-            </button>
-          );
-        })}
+      <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
+        <div className="flex gap-2 flex-wrap">
+          {Object.keys(CHAMPIONSHIP_PHASE_META).map((key) => {
+            const exists = !!championship[key];
+            const canCreate = priorPhaseClosed(key);
+            return (
+              <button
+                key={key}
+                disabled={!exists && !canCreate}
+                onClick={() => setActiveTab(key)}
+                className={`rounded-full px-4 py-2 text-xs font-semibold border transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
+                  activeTab === key ? "bg-emerald-500 text-slate-950 border-emerald-500" : "border-white/10 text-slate-400"
+                }`}
+              >
+                {CHAMPIONSHIP_PHASE_META[key].label}
+                {!exists && canCreate && " (da creare)"}
+                {championship[key]?.closed && " ✓"}
+              </button>
+            );
+          })}
+        </div>
+        <SectionResetButton
+          label="Azzera Campionato"
+          confirmText="Eliminare tutte le fasi del campionato (squadre, partite, classifiche)?"
+          onConfirm={() => {
+            updateSeason(() => ({ championship: { fase1: null, fase2: null, faseFinale: null } }));
+            showToast("Campionato azzerato");
+          }}
+        />
       </div>
 
       {!phase ? (
@@ -5726,16 +6288,17 @@ const CONFIG_TABLES = [
   { key: "positions", label: "Posizione in Campo", hint: "" },
   { key: "medicalStatuses", label: "Stato Medico", hint: "" },
   { key: "exerciseTypes", label: "Tipologia Esercizi", hint: "" },
+  { key: "categories", label: "Categorie", hint: "Fasce d'età/categoria del club, usate per taggare gli esercizi" },
 ];
 
-function ConfigurationsSection({ season, updateSeason, showToast }) {
-  const config = season.config || defaultConfig();
+function ConfigurationsSection({ library, updateLibrary, showToast }) {
+  const config = library.config || defaultConfig();
   const [activeTable, setActiveTable] = useState("roles");
   const meta = CONFIG_TABLES.find((t) => t.key === activeTable);
   const items = config[activeTable] || [];
 
   function setItems(newItems) {
-    updateSeason((s) => ({ config: { ...(s.config || defaultConfig()), [activeTable]: newItems } }));
+    updateLibrary((lib) => ({ config: { ...(lib.config || defaultConfig()), [activeTable]: newItems } }));
   }
 
   return (
@@ -5873,8 +6436,8 @@ function fileSizeLabel(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function DossierSection({ season, updateSeason, showToast }) {
-  const dossier = season.dossier || [];
+function DossierSection({ library, updateLibrary, showToast }) {
+  const dossier = library.dossier || [];
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("Tutti");
   const [pendingFile, setPendingFile] = useState(null); // { fileName, fileType, fileSize, dataUrl }
@@ -5905,9 +6468,9 @@ function DossierSection({ season, updateSeason, showToast }) {
 
   function saveDocument({ title, category }) {
     if (!pendingFile) return;
-    updateSeason((s) => ({
+    updateLibrary((lib) => ({
       dossier: [
-        ...(s.dossier || []),
+        ...(lib.dossier || []),
         {
           id: uid("doc"),
           title: title.trim(),
@@ -5926,7 +6489,7 @@ function DossierSection({ season, updateSeason, showToast }) {
   }
 
   function deleteDocument(id) {
-    updateSeason((s) => ({ dossier: (s.dossier || []).filter((d) => d.id !== id) }));
+    updateLibrary((lib) => ({ dossier: (lib.dossier || []).filter((d) => d.id !== id) }));
     setConfirmDeleteId(null);
     showToast("Documento eliminato");
   }
@@ -6086,11 +6649,15 @@ function DossierUploadForm({ fileName, fileSize, onSubmit, onCancel }) {
    SEZIONE EXPORT / IMPORT
    ============================================================ */
 
-function ExportSection({ seasons, activeSeason, setSeasons, setActiveSeasonId, showToast }) {
+function ExportSection({ seasons, activeSeason, setSeasons, setActiveSeasonId, library, setLibrary, showToast }) {
   const fileInputRef = React.useRef(null);
 
   function exportFullJSON() {
-    const payload = JSON.stringify({ seasons, activeSeasonId: activeSeason?.id, exportedAt: new Date().toISOString() }, null, 2);
+    const payload = JSON.stringify(
+      { seasons, activeSeasonId: activeSeason?.id, library, exportedAt: new Date().toISOString() },
+      null,
+      2
+    );
     downloadBlob(payload, `backup-${activeSeason?.name || "stagione"}_${formatBackupDateSuffix()}.json`, "application/json");
     showToast("Backup JSON scaricato");
   }
@@ -6109,6 +6676,15 @@ function ExportSection({ seasons, activeSeason, setSeasons, setActiveSeasonId, s
         if (data.seasons && Array.isArray(data.seasons)) {
           setSeasons(data.seasons);
           setActiveSeasonId(data.activeSeasonId || data.seasons[0]?.id);
+          if (data.library) {
+            setLibrary(
+              migrateLibraryCategories({
+                ...defaultLibrary(),
+                ...data.library,
+                config: { ...defaultConfig(), ...(data.library.config || {}) },
+              })
+            );
+          }
           showToast("Dati importati con successo");
         } else {
           showToast("File non valido: struttura dati non riconosciuta", "error");
@@ -6563,9 +7139,14 @@ function SettingsSection({ season, updateSeason, sharedMode, onToggleShared, sea
   }
 
   function resetSeasonData() {
-    updateSeason(() => ({ players: [], trainings: [], matches: [] }));
+    updateSeason(() => ({
+      players: [],
+      trainings: [],
+      matches: [],
+      championship: { fase1: null, fase2: null, faseFinale: null },
+    }));
     setConfirmReset(false);
-    showToast("Dati della stagione azzerati");
+    showToast("Dati della stagione azzerati (Giocatori, Allenamenti, Partite, Campionato)");
   }
 
   function deleteSeason() {
