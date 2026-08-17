@@ -6091,7 +6091,7 @@ function ExportSection({ seasons, activeSeason, setSeasons, setActiveSeasonId, s
 
   function exportFullJSON() {
     const payload = JSON.stringify({ seasons, activeSeasonId: activeSeason?.id, exportedAt: new Date().toISOString() }, null, 2);
-    downloadBlob(payload, `backup-${activeSeason?.name || "stagione"}.json`, "application/json");
+    downloadBlob(payload, `backup-${activeSeason?.name || "stagione"}_${formatBackupDateSuffix()}.json`, "application/json");
     showToast("Backup JSON scaricato");
   }
 
@@ -6416,6 +6416,16 @@ function buildProfessionalSheet({ title, subtitle, groups, headers, rows, colWid
   ws["!rows"] = [{ hpt: 22 }, { hpt: 16 }, { hpt: 18 }, { hpt: 18 }];
   ws["!freeze"] = { xSplit: 0, ySplit: 4, topLeftCell: XLSX.utils.encode_cell({ r: 4, c: 0 }), activePane: "bottomLeft", state: "frozen" };
   return ws;
+}
+
+// Formatta la data corrente come es. "12ago26" (gg + mese abbreviato IT + aa),
+// usata per marcare i file di backup con la data di esportazione.
+function formatBackupDateSuffix(date = new Date()) {
+  const months = ["gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"];
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = months[date.getMonth()];
+  const year = String(date.getFullYear()).slice(-2);
+  return `${day}${month}${year}`;
 }
 
 function downloadBlob(content, filename, mime) {
