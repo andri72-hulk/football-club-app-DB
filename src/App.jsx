@@ -3456,7 +3456,7 @@ function FocusTecniciSection({ focusTecnici, onSave, onDelete, exercises, onSave
         )}
       </Modal>
 
-      <Modal open={showExerciseForm} onClose={() => setShowExerciseForm(false)} title="Esercizio Singolo">
+      <Modal open={showExerciseForm} onClose={() => setShowExerciseForm(false)} title="Esercizio Singolo" wide>
         {editingExercise && (
           <ExerciseForm
             initial={editingExercise}
@@ -3501,60 +3501,66 @@ function ExerciseForm({ initial, onSubmit, onCancel }) {
   }
 
   return (
-    <div>
-      <Field label="Titolo esercizio">
-        <input className={inputClass} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Es. Rondo 3v1" />
-      </Field>
-      <Field label="Tipologia">
-        <select className={inputClass} value={form.type || "Tecnica"} onChange={(e) => setForm({ ...form, type: e.target.value })}>
-          {config.exerciseTypes.map((t) => (
-            <option key={t} value={t}>{t}</option>
-          ))}
-        </select>
-      </Field>
-      <Field label="Categoria">
-        <select className={inputClass} value={form.category || ""} onChange={(e) => setForm({ ...form, category: e.target.value })}>
-          <option value="">Nessuna categoria</option>
-          {(config.categories || []).map((c) => (
-            <option key={c} value={c}>{c}</option>
-          ))}
-        </select>
-      </Field>
-      <Field label="Tempo di esecuzione">
-        <input className={inputClass} value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} placeholder="Es. 10 minuti" />
-      </Field>
-      <Field label="Obiettivo">
-        <input className={inputClass} value={form.goal || ""} onChange={(e) => setForm({ ...form, goal: e.target.value })} placeholder="Es. Migliorare il controllo orientato" />
-      </Field>
-      <Field label="Descrizione">
-        <textarea rows={3} className={inputClass} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Es. Palleggi liberi" />
-      </Field>
-      <Field label="Immagine (facoltativa)">
-        {form.image ? (
-          <div>
-            <button type="button" onClick={() => setShowLightbox(true)} className="block w-full">
-              <img src={form.image} alt="Anteprima esercizio" className="w-full max-h-48 object-contain rounded-xl border border-white/10 bg-slate-950/40 mb-2" />
-            </button>
-            <div className="flex gap-2">
-              <Button type="button" variant="secondary" onClick={() => fileInputRef.current?.click()}>Sostituisci</Button>
-              <Button type="button" variant="ghost" onClick={() => setForm((f) => ({ ...f, image: null, thumbnail: null }))}>Rimuovi</Button>
+    <div className="grid sm:grid-cols-2 gap-x-6">
+      <div>
+        <Field label="Titolo esercizio">
+          <input className={inputClass} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Es. Rondo 3v1" />
+        </Field>
+        <Field label="Tipologia">
+          <select className={inputClass} value={form.type || "Tecnica"} onChange={(e) => setForm({ ...form, type: e.target.value })}>
+            {config.exerciseTypes.map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Categoria">
+          <select className={inputClass} value={form.category || ""} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+            <option value="">Nessuna categoria</option>
+            {(config.categories || []).map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Tempo di esecuzione">
+          <input className={inputClass} value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} placeholder="Es. 10 minuti" />
+        </Field>
+      </div>
+
+      <div>
+        <Field label="Obiettivo">
+          <input className={inputClass} value={form.goal || ""} onChange={(e) => setForm({ ...form, goal: e.target.value })} placeholder="Es. Migliorare il controllo orientato" />
+        </Field>
+        <Field label="Descrizione">
+          <textarea rows={5} className={inputClass} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Es. Palleggi liberi" />
+        </Field>
+        <Field label="Immagine (facoltativa)">
+          {form.image ? (
+            <div>
+              <button type="button" onClick={() => setShowLightbox(true)} className="block w-full">
+                <img src={form.image} alt="Anteprima esercizio" className="w-full max-h-40 object-contain rounded-xl border border-white/10 bg-slate-950/40 mb-2" />
+              </button>
+              <div className="flex gap-2">
+                <Button type="button" variant="secondary" onClick={() => fileInputRef.current?.click()}>Sostituisci</Button>
+                <Button type="button" variant="ghost" onClick={() => setForm((f) => ({ ...f, image: null, thumbnail: null }))}>Rimuovi</Button>
+              </div>
             </div>
-          </div>
-        ) : (
-          <Button type="button" variant="secondary" onClick={() => fileInputRef.current?.click()}>Carica immagine</Button>
-        )}
-        <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
-        {imageError && <p className="text-[11px] text-rose-400 mt-1">{imageError}</p>}
-      </Field>
-      <div className="flex justify-between gap-2 mt-4">
-        <Button variant="secondary" onClick={() => downloadExerciseSheet(form)} title="Stampa / Scarica scheda esercizio">
-          <Download className="w-4 h-4" /> Stampa
-        </Button>
-        <div className="flex gap-2">
-          <Button variant="secondary" onClick={onCancel}>Annulla</Button>
-          <Button onClick={() => form.title.trim() && onSubmit(form)}>
-            <Save className="w-4 h-4" /> Salva Esercizio
+          ) : (
+            <Button type="button" variant="secondary" onClick={() => fileInputRef.current?.click()}>Carica immagine</Button>
+          )}
+          <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
+          {imageError && <p className="text-[11px] text-rose-400 mt-1">{imageError}</p>}
+        </Field>
+
+        <div className="flex flex-wrap justify-between gap-2 mt-4">
+          <Button variant="secondary" onClick={() => downloadExerciseSheet(form)} title="Stampa / Scarica scheda esercizio">
+            <Download className="w-4 h-4" /> Stampa
           </Button>
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={onCancel}>Annulla</Button>
+            <Button onClick={() => form.title.trim() && onSubmit(form)}>
+              <Save className="w-4 h-4" /> Salva Esercizio
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -3764,7 +3770,7 @@ function ExercisesLibrarySection({ exercises, onSaveExercise, onDeleteExercise, 
         </div>
       )}
 
-      <Modal open={showForm} onClose={() => setShowForm(false)} title="Esercizio Singolo">
+      <Modal open={showForm} onClose={() => setShowForm(false)} title="Esercizio Singolo" wide>
         {editing && (
           <ExerciseForm
             initial={editing}
