@@ -1792,14 +1792,20 @@ export default function FootballClubApp() {
             >
               <Menu className="w-5 h-5" />
             </button>
-            <div
-              className="w-9 h-9 rounded-xl flex items-center justify-center shadow-lg shrink-0"
-              style={{
-                backgroundImage: `linear-gradient(135deg, ${activeSeason?.colorPrimary || "#10b981"}, ${activeSeason?.colorSecondary || "#0f172a"})`,
-              }}
-            >
-              <Shield className="w-5 h-5 text-white" />
-            </div>
+            {activeSeason?.logoUrl ? (
+              <div className="w-9 h-9 rounded-xl overflow-hidden shadow-lg shrink-0 border border-white/10 bg-slate-900">
+                <img src={activeSeason.logoUrl} alt="Logo squadra" className="w-full h-full object-cover" />
+              </div>
+            ) : (
+              <div
+                className="w-9 h-9 rounded-xl flex items-center justify-center shadow-lg shrink-0"
+                style={{
+                  backgroundImage: `linear-gradient(135deg, ${activeSeason?.colorPrimary || "#10b981"}, ${activeSeason?.colorSecondary || "#0f172a"})`,
+                }}
+              >
+                <Shield className="w-5 h-5 text-white" />
+              </div>
+            )}
             <div className="min-w-0">
               <h1 className="text-lg sm:text-xl font-bold text-slate-100 truncate">
                 {activeSeason?.teamName || "Nome Squadra"}
@@ -7124,9 +7130,12 @@ function SettingsSection({ season, updateSeason, sharedMode, onToggleShared, sea
     teamFormat: season.teamFormat || "",
     colorPrimary: season.colorPrimary || "#10b981",
     colorSecondary: season.colorSecondary || "#0f172a",
+    logoUrl: season.logoUrl || null,
   });
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmDeleteSeason, setConfirmDeleteSeason] = useState(false);
+  const [logoError, setLogoError] = useState("");
+  const logoInputRef = React.useRef(null);
 
   useEffect(() => {
     setForm({
@@ -7136,8 +7145,22 @@ function SettingsSection({ season, updateSeason, sharedMode, onToggleShared, sea
       teamFormat: season.teamFormat || "",
       colorPrimary: season.colorPrimary || "#10b981",
       colorSecondary: season.colorSecondary || "#0f172a",
+      logoUrl: season.logoUrl || null,
     });
   }, [season.id]);
+
+  async function handleLogoChange(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLogoError("");
+    try {
+      const dataUrl = await resizeImageFile(file, 400, 0.9);
+      setForm((f) => ({ ...f, logoUrl: dataUrl }));
+    } catch (err) {
+      setLogoError("Immagine non valida, riprova con un altro file.");
+    }
+    e.target.value = "";
+  }
 
   function save() {
     updateSeason(() => ({ ...form }));
@@ -7179,6 +7202,30 @@ function SettingsSection({ season, updateSeason, sharedMode, onToggleShared, sea
         </Field>
         <Field label="Nome squadra">
           <input className={inputClass} value={form.teamName} onChange={(e) => setForm({ ...form, teamName: e.target.value })} placeholder="Es. Prima Squadra" />
+        </Field>
+        <Field label="Logo / Stemma squadra">
+          <div className="flex items-center gap-3">
+            <div className="w-14 h-14 rounded-xl overflow-hidden border border-white/10 bg-slate-900 flex items-center justify-center shrink-0">
+              {form.logoUrl ? (
+                <img src={form.logoUrl} alt="Logo squadra" className="w-full h-full object-cover" />
+              ) : (
+                <Shield className="w-6 h-6 text-slate-600" />
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button type="button" variant="secondary" onClick={() => logoInputRef.current?.click()}>
+                {form.logoUrl ? "Sostituisci" : "Carica logo"}
+              </Button>
+              {form.logoUrl && (
+                <Button type="button" variant="ghost" onClick={() => setForm((f) => ({ ...f, logoUrl: null }))}>
+                  Rimuovi
+                </Button>
+              )}
+            </div>
+            <input ref={logoInputRef} type="file" accept="image/*" className="hidden" onChange={handleLogoChange} />
+          </div>
+          {logoError && <p className="text-[11px] text-rose-400 mt-1">{logoError}</p>}
+          <p className="text-[11px] text-slate-500 mt-1">Comparirà in alto, accanto al nome squadra e stagione.</p>
         </Field>
         <Field label="Leva calcistica">
           <input className={inputClass} value={form.leva} onChange={(e) => setForm({ ...form, leva: e.target.value })} placeholder="Es. Leva 2012 / Giovanissimi" />
