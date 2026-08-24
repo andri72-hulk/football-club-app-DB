@@ -30,8 +30,16 @@ const storagePolyfill = {
     if (!shared) query = query.eq("owner_id", user.id);
 
     const { data, error } = await query.maybeSingle();
-    if (error) throw new Error("Storage get failed: " + error.message);
-    if (!data) throw new Error(`Storage key not found: ${key}`);
+    if (error) {
+      const netErr = new Error("Storage get failed: " + error.message);
+      netErr.code = "NETWORK_ERROR";
+      throw netErr;
+    }
+    if (!data) {
+      const notFoundErr = new Error(`Storage key not found: ${key}`);
+      notFoundErr.code = "NOT_FOUND";
+      throw notFoundErr;
+    }
     return { key, value: data.value, shared: !!shared };
   },
 
