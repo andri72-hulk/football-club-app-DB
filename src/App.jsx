@@ -1558,6 +1558,7 @@ export default function FootballClubApp() {
   const [seasons, setSeasons] = useState([]);
   const [activeSeasonId, setActiveSeasonId] = useState(null);
   const [library, setLibrary] = useState(null);
+  const [loadError, setLoadError] = useState(null);
   const [tab, setTab] = useState("dashboard");
   const [playersView, setPlayersView] = useState("grid"); // 'grid' | 'board'
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -1568,25 +1569,43 @@ export default function FootballClubApp() {
     setTimeout(() => setToast(null), 2600);
   }, []);
 
-  /* ---------- Caricamento iniziale ---------- */
-  useEffect(() => {
-    (async () => {
+  /* ---------- Caricamento iniziale (richiamabile anche da "Riprova") ---------- */
+  async function loadInitialData() {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      let shared = false;
       try {
-        let shared = false;
-        try {
-          const flag = await window.storage.get(SHARE_FLAG_KEY, false);
-          shared = flag?.value === "true";
-        } catch (e) {
+        const flag = await window.storage.get(SHARE_FLAG_KEY, false);
+        shared = flag?.value === "true";
+      } catch (e) {
           shared = false;
         }
         setSharedMode(shared);
 
         let data = null;
+        let readFailed = false;
+        let readErrorMessage = "";
         try {
           const res = await window.storage.get(STORAGE_KEY, shared);
           data = res?.value ? JSON.parse(res.value) : null;
         } catch (e) {
-          data = null;
+          if (e?.code === "NOT_FOUND") {
+            // Nessun dato salvato: è un utente/progetto genuinamente nuovo, sicuro procedere.
+            data = null;
+          } else {
+            // Errore di rete/server (es. instabilità Supabase): NON dobbiamo mai
+            // interpretarlo come "nessun dato" — altrimenti il salvataggio automatico
+            // sovrascriverebbe i dati reali con una stagione vuota. Blocchiamo tutto
+            // e mostriamo un errore con possibilità di riprovare.
+            readFailed = true;
+            readErrorMessage = e?.message || "Impossibile contattare il server. Controlla la connessione e riprova.";
+          }
+        }
+
+        if (readFailed) {
+          setLoadError(readErrorMessage);
+          return;
         }
 
         if (data && data.seasons && data.seasons.length > 0) {
@@ -1643,14 +1662,19 @@ export default function FootballClubApp() {
           setLibrary(defaultLibrary());
         }
       } catch (e) {
-        const s = newSeason("Stagione 2026-27");
-        setSeasons([s]);
-        setActiveSeasonId(s.id);
-        setLibrary(defaultLibrary());
+        // Errore imprevisto (es. dati corrotti): per sicurezza NON creiamo mai
+        // una stagione vuota qui, per non rischiare di sovrascrivere dati reali
+        // con il salvataggio automatico. Mostriamo l'errore con "Riprova".
+        setLoadError(e?.message || "Si è verificato un errore imprevisto durante il caricamento.");
+        return;
       } finally {
         setLoading(false);
       }
-    })();
+  }
+
+  useEffect(() => {
+    loadInitialData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /* ---------- Salvataggio automatico (con retry) ---------- */
@@ -1705,7 +1729,7 @@ export default function FootballClubApp() {
   // Debounce: aspetta che l'utente finisca di modificare prima di salvare,
   // evitando chiamate multiple ravvicinate (es. slider trascinati, digitazione rapida)
   useEffect(() => {
-    if (loading) return;
+    if (loading || loadError) return;
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(() => {
       persist(seasons, activeSeasonId, undefined, library);
@@ -1753,6 +1777,24 @@ export default function FootballClubApp() {
       const detail = e?.message ? `: ${e.message}` : "";
       showToast(`Impossibile cambiare modalità di condivisione${detail}`, "error");
     }
+  }
+
+  if (loadError) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center px-4">
+        <div className="max-w-sm text-center">
+          <AlertCircle className="w-10 h-10 text-rose-500 mx-auto mb-4" />
+          <p className="text-white font-semibold mb-2">Impossibile caricare i dati</p>
+          <p className="text-sm text-slate-400 mb-1">{loadError}</p>
+          <p className="text-xs text-slate-500 mb-5">
+            Per sicurezza non è stato creato nulla di nuovo: i tuoi dati salvati restano intatti. Riprova quando la connessione è di nuovo stabile.
+          </p>
+          <Button onClick={loadInitialData}>
+            <RefreshCw className="w-4 h-4" /> Riprova
+          </Button>
+        </div>
+      </div>
+    );
   }
 
   if (loading || !library) {
