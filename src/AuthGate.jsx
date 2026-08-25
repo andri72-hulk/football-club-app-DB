@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Shield, Mail, Lock, LogOut, Loader2, LogIn, UserPlus } from "lucide-react";
 import { nhost } from "./nhostClient.js";
+import { setAuthUserId } from "./storagePolyfill.js";
 
 export default function AuthGate({ children }) {
   const [session, setSession] = useState(null);
@@ -22,6 +23,7 @@ export default function AuthGate({ children }) {
         const { body, error } = await nhost.auth.signUpEmailPassword({ email: email.trim(), password });
         if (error) throw new Error(error.message);
         if (body?.session) {
+          setAuthUserId(body.session.user?.id);
           setSession(body.session);
         } else {
           setInfo("Account creato. Controlla la tua email per confermarlo, poi accedi qui con Login.");
@@ -30,6 +32,7 @@ export default function AuthGate({ children }) {
       } else {
         const { body, error } = await nhost.auth.signInEmailPassword({ email: email.trim(), password });
         if (error) throw new Error(error.message);
+        setAuthUserId(body.session?.user?.id);
         setSession(body.session);
       }
     } catch (err) {
@@ -41,6 +44,7 @@ export default function AuthGate({ children }) {
 
   function handleLogout() {
     nhost.auth.signOut().catch(() => {});
+    setAuthUserId(null);
     setSession(null);
   }
 
