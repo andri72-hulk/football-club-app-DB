@@ -1,111 +1,119 @@
-// Ricrea l'API window.storage usata dall'app appoggiandosi a Supabase
-// invece che a IndexedDB locale. Stessa identica interfaccia esterna
-// (get/set/delete/list con chiave + flag "shared"), quindi il resto
-// di App.jsx non richiede modifiche.
-//
-// "shared = false" (personale): la riga è visibile solo a chi l'ha
-// creata (owner_id = utente autenticato).
-// "shared = true" (condiviso): la riga è visibile a chiunque sia
-// autenticato nel progetto Supabase (tutto lo staff invitato).
-//
-// Nota: a differenza della versione IndexedDB, questa richiede un
-// utente autenticato (login via magic link) per poter leggere/scrivere.
+// Ricrea l'API window.storage usata dall'app appoggiandosi a Nhost
+// (Postgres + Hasura GraphQL) invece che a Supabase. Stessa identica
+// interfaccia esterna (get/set/delete/list con chiave + flag "shared"),
+// quindi il resto di App.jsx non richiede ALCUNA modifica: è lo stesso
+// meccanismo già usato per passare da IndexedDB a Supabase.
 
-import { supabase } from "./supabaseClient.js";
+import { nhost } from "./nhostClient.js";
 
-const TABLE = "app_storage";
-
-async function requireUser() {
-  const { data, error } = await supabase.auth.getUser();
-  if (error || !data?.user) {
+async function requireUserId() {
+  const user = nhost.auth.getUser();
+  if (!user) {
     throw new Error("Utente non autenticato: effettua il login per salvare o caricare i dati.");
   }
-  return data.user;
+  return user.id;
+}
+
+async function gql(query, variables) {
+  const result = await nhost.graphql.request({ query, variables });
+  if (result.body?.errors?.length) {
+    throw new Error("Errore GraphQL: " + result.body.errors[0].message);
+  }
+  return result.body.data;
 }
 
 const storagePolyfill = {
   async get(key, shared = false) {
-    const user = await requireUser();
-    let query = supabase.from(TABLE).select("value").eq("storage_key", key).eq("shared", shared);
-    if (!shared) query = query.eq("owner_id", user.id);
-
-    const { data, error } = await query.maybeSingle();
-    if (error) {
-      const netErr = new Error("Storage get failed: " + error.message);
-      netErr.code = "NETWORK_ERROR";
-      throw netErr;
-    }
-    if (!data) {
-      const notFoundErr = new Error(`Storage key not found: ${key}`);
-      notFoundErr.code = "NOT_FOUND";
-      throw notFoundErr;
-    }
-    return { key, value: data.value, shared: !!shared };
+    const userId = await requireUserId();
+    const data = await gql(
+      `query Get($key: String!, $shared: Boolean!, $ownerId: uuid) {
+        app_storage(
+          where: { storage_key: { _eq: $key }, shared: { _eq: $shared }, owner_id: { _eq: $ownerId } }
+          limit: 1
+        ) { value }
+      }`,
+      { key, shared, ownerId: shared ? null : userId }
+    );
+    const row = data.app_storage?.[0];
+    if (!row) throw new Error(`Storage key not found: ${key}`);
+    return { key, value: row.value, shared: !!shared };
   },
 
   async set(key, value, shared = false) {
-    const user = await requireUser();
+    const userId = await requireUserId();
 
     const findExisting = async () => {
-      let q = supabase.from(TABLE).select("id").eq("storage_key", key).eq("shared", shared);
-      if (!shared) q = q.eq("owner_id", user.id);
-      const { data, error } = await q.maybeSingle();
-      if (error) throw new Error("Storage set failed (lettura preliminare): " + error.message);
-      return data;
+      const data = await gql(
+        `query Find($key: String!, $shared: Boolean!, $ownerId: uuid) {
+          app_storage(
+            where: { storage_key: { _eq: $key }, shared: { _eq: $shared }, owner_id: { _eq: $ownerId } }
+            limit: 1
+          ) { id }
+        }`,
+        { key, shared, ownerId: shared ? null : userId }
+      );
+      return data.app_storage?.[0] || null;
     };
 
     const existing = await findExisting();
 
     if (existing) {
-      const { error } = await supabase
-        .from(TABLE)
-        .update({ value, updated_at: new Date().toISOString(), owner_id: user.id })
-        .eq("id", existing.id);
-      if (error) throw new Error("Storage set failed: " + error.message);
+      await gql(
+        `mutation Update($id: uuid!, $value: String, $ownerId: uuid) {
+          update_app_storage_by_pk(pk_columns: { id: $id }, _set: { value: $value, owner_id: $ownerId, updated_at: "now()" }) { id }
+        }`,
+        { id: existing.id, value, ownerId: userId }
+      );
       return { key, value, shared: !!shared };
     }
 
-    const { error: insertError } = await supabase
-      .from(TABLE)
-      .insert({ storage_key: key, shared, owner_id: user.id, value });
-
-    if (insertError) {
+    try {
+      await gql(
+        `mutation Insert($key: String!, $shared: Boolean!, $ownerId: uuid, $value: String) {
+          insert_app_storage_one(object: { storage_key: $key, shared: $shared, owner_id: $ownerId, value: $value }) { id }
+        }`,
+        { key, shared, ownerId: userId, value }
+      );
+    } catch (err) {
       // Race condition: un'altra scrittura concorrente ha creato la riga
-      // nel frattempo (raro, es. due dispositivi che salvano insieme).
-      // Ritentiamo come aggiornamento invece di far fallire il salvataggio.
-      if (insertError.code === "23505") {
-        const retryExisting = await findExisting();
-        if (retryExisting) {
-          const { error: updateError } = await supabase
-            .from(TABLE)
-            .update({ value, updated_at: new Date().toISOString(), owner_id: user.id })
-            .eq("id", retryExisting.id);
-          if (updateError) throw new Error("Storage set failed: " + updateError.message);
-          return { key, value, shared: !!shared };
-        }
+      // nel frattempo. Ritentiamo come aggiornamento.
+      const retryExisting = await findExisting();
+      if (retryExisting) {
+        await gql(
+          `mutation Update($id: uuid!, $value: String, $ownerId: uuid) {
+            update_app_storage_by_pk(pk_columns: { id: $id }, _set: { value: $value, owner_id: $ownerId, updated_at: "now()" }) { id }
+          }`,
+          { id: retryExisting.id, value, ownerId: userId }
+        );
+      } else {
+        throw err;
       }
-      throw new Error("Storage set failed: " + insertError.message);
     }
-
     return { key, value, shared: !!shared };
   },
 
   async delete(key, shared = false) {
-    const user = await requireUser();
-    let q = supabase.from(TABLE).delete().eq("storage_key", key).eq("shared", shared);
-    if (!shared) q = q.eq("owner_id", user.id);
-    const { error } = await q;
-    if (error) throw new Error("Storage delete failed: " + error.message);
+    const userId = await requireUserId();
+    await gql(
+      `mutation Delete($key: String!, $shared: Boolean!, $ownerId: uuid) {
+        delete_app_storage(where: { storage_key: { _eq: $key }, shared: { _eq: $shared }, owner_id: { _eq: $ownerId } }) { affected_rows }
+      }`,
+      { key, shared, ownerId: shared ? null : userId }
+    );
     return { key, deleted: true, shared: !!shared };
   },
 
   async list(prefix = "", shared = false) {
-    const user = await requireUser();
-    let q = supabase.from(TABLE).select("storage_key").eq("shared", shared).like("storage_key", `${prefix}%`);
-    if (!shared) q = q.eq("owner_id", user.id);
-    const { data, error } = await q;
-    if (error) throw new Error("Storage list failed: " + error.message);
-    return { keys: (data || []).map((r) => r.storage_key), prefix, shared: !!shared };
+    const userId = await requireUserId();
+    const data = await gql(
+      `query List($prefix: String!, $shared: Boolean!, $ownerId: uuid) {
+        app_storage(
+          where: { storage_key: { _like: $prefix }, shared: { _eq: $shared }, owner_id: { _eq: $ownerId } }
+        ) { storage_key }
+      }`,
+      { prefix: `${prefix}%`, shared, ownerId: shared ? null : userId }
+    );
+    return { keys: (data.app_storage || []).map((r) => r.storage_key), prefix, shared: !!shared };
   },
 };
 
