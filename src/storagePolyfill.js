@@ -43,7 +43,11 @@ const storagePolyfill = {
         }`;
     const data = await gql(query, shared ? { key } : { key, ownerId: userId });
     const row = data.app_storage?.[0];
-    if (!row) throw new Error(`Storage key not found: ${key}`);
+    if (!row) {
+      const notFoundErr = new Error(`Storage key not found: ${key}`);
+      notFoundErr.code = "NOT_FOUND";
+      throw notFoundErr;
+    }
     return { key, value: row.value, shared: !!shared };
   },
 
