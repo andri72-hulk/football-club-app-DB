@@ -6,12 +6,21 @@
 
 import { nhost } from "./nhostClient.js";
 
+// L'id dell'utente collegato viene impostato direttamente da AuthGate.jsx
+// subito dopo un login/registrazione riuscita (dalla risposta stessa della
+// chiamata), invece di richiederlo di nuovo all'SDK: in questa versione
+// dell'SDK Nhost, richiederlo separatamente non è affidabile.
+let currentUserId = null;
+
+export function setAuthUserId(id) {
+  currentUserId = id;
+}
+
 async function requireUserId() {
-  const user = nhost.auth.getUser();
-  if (!user) {
+  if (!currentUserId) {
     throw new Error("Utente non autenticato: effettua il login per salvare o caricare i dati.");
   }
-  return user.id;
+  return currentUserId;
 }
 
 async function gql(query, variables) {
