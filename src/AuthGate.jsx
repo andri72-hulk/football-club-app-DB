@@ -3,21 +3,13 @@ import { Shield, Mail, Lock, LogOut, Loader2, LogIn, UserPlus } from "lucide-rea
 import { nhost } from "./nhostClient.js";
 
 export default function AuthGate({ children }) {
-  const [session, setSession] = useState(undefined); // undefined = ancora da verificare
+  const [session, setSession] = useState(null);
   const [mode, setMode] = useState("login"); // 'login' | 'signup'
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
-
-  useEffect(() => {
-    setSession(nhost.auth.getSession());
-    const unsubscribe = nhost.auth.onAuthStateChanged((_event, newSession) => {
-      setSession(newSession);
-    });
-    return () => unsubscribe?.();
-  }, []);
 
   async function handleSubmit(e) {
     if (e && e.preventDefault) e.preventDefault();
@@ -48,16 +40,8 @@ export default function AuthGate({ children }) {
   }
 
   function handleLogout() {
-    nhost.auth.signOut();
+    nhost.auth.signOut().catch(() => {});
     setSession(null);
-  }
-
-  if (session === undefined) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-emerald-500 animate-spin" />
-      </div>
-    );
   }
 
   if (!session) {
