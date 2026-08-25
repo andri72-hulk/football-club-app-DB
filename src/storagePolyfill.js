@@ -53,53 +53,24 @@ const storagePolyfill = {
 
   async set(key, value, shared = false) {
     const userId = await requireUserId();
-
-    const findExisting = async () => {
-      const query = shared
-        ? `query Find($key: String!) {
-            app_storage(where: { storage_key: { _eq: $key }, shared: { _eq: true } }, limit: 1) { id }
-          }`
-        : `query Find($key: String!, $ownerId: uuid!) {
-            app_storage(where: { storage_key: { _eq: $key }, shared: { _eq: false }, owner_id: { _eq: $ownerId } }, limit: 1) { id }
-          }`;
-      const data = await gql(query, shared ? { key } : { key, ownerId: userId });
-      return data.app_storage?.[0] || null;
-    };
-
-    const existing = await findExisting();
-
-    if (existing) {
-      await gql(
-        `mutation Update($id: uuid!, $value: String, $ownerId: uuid!) {
-          update_app_storage_by_pk(pk_columns: { id: $id }, _set: { value: $value, owner_id: $ownerId, updated_at: "now()" }) { id }
-        }`,
-        { id: existing.id, value, ownerId: userId }
-      );
-      return { key, value, shared: !!shared };
-    }
-
-    try {
-      await gql(
-        `mutation Insert($key: String!, $shared: Boolean!, $ownerId: uuid!, $value: String) {
-          insert_app_storage_one(object: { storage_key: $key, shared: $shared, owner_id: $ownerId, value: $value }) { id }
-        }`,
-        { key, shared, ownerId: userId, value }
-      );
-    } catch (err) {
-      // Race condition: un'altra scrittura concorrente ha creato la riga
-      // nel frattempo. Ritentiamo come aggiornamento.
-      const retryExisting = await findExisting();
-      if (retryExisting) {
-        await gql(
-          `mutation Update($id: uuid!, $value: String, $ownerId: uuid!) {
-            update_app_storage_by_pk(pk_columns: { id: $id }, _set: { value: $value, owner_id: $ownerId, updated_at: "now()" }) { id }
-          }`,
-          { id: retryExisting.id, value, ownerId: userId }
-        );
-      } else {
-        throw err;
-      }
-    }
+    const updatedAt = new Date().toISOString();
+    // Upsert in un'unica chiamata (invece di "controlla se esiste, poi scrivi"):
+    // dimezza il numero di richieste al server per ogni salvataggio, riducendo
+    // il carico sull'istanza gratuita di Nhost.
+    const mutation = shared
+      ? `mutation Upsert($key: String!, $ownerId: uuid!, $value: String, $updatedAt: timestamptz!) {
+          insert_app_storage_one(
+            object: { storage_key: $key, shared: true, owner_id: $ownerId, value: $value, updated_at: $updatedAt }
+            on_conflict: { constraint: app_storage_shared_key, update_columns: [value, updated_at, owner_id] }
+          ) { id }
+        }`
+      : `mutation Upsert($key: String!, $ownerId: uuid!, $value: String, $updatedAt: timestamptz!) {
+          insert_app_storage_one(
+            object: { storage_key: $key, shared: false, owner_id: $ownerId, value: $value, updated_at: $updatedAt }
+            on_conflict: { constraint: app_storage_personal_key, update_columns: [value, updated_at, owner_id] }
+          ) { id }
+        }`;
+    await gql(mutation, { key, ownerId: userId, value, updatedAt });
     return { key, value, shared: !!shared };
   },
 
